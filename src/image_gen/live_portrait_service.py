@@ -43,6 +43,16 @@ class LivePortraitService:
     process per concurrent trainee session, each pinned to one of
     quatro's three GPUs.
 
+    CAVEAT: execute() reads config values from
+    self.live_portrait_wrapper.inference_cfg — fixed once at
+    construction time — NOT from the per-call ArgumentConfig built in
+    generate(). driving_multiplier is patched onto that fixed
+    inference_cfg explicitly before each call (see generate() below) to
+    work around this; any other per-call flag (e.g. animation_region,
+    flag_stitching) would need the same explicit patch to actually take
+    effect — passing it to generate()'s ArgumentConfig alone will be
+    silently ignored, as driving_multiplier originally was.
+
     :param gpu_index: Physical GPU index (0, 1, or 2 on quatro) this
         service instance is pinned to.
     """
@@ -106,6 +116,16 @@ class LivePortraitService:
             source=str(source), driving=str(driving), output_dir=str(output_dir),
             driving_multiplier=driving_multiplier,
         )
+        # BUG FIX: execute() reads self.live_portrait_wrapper.inference_cfg
+        # (fixed at __init__ time from a default ArgumentConfig), NOT the
+        # `args` object built above — so driving_multiplier on `args` was
+        # silently ignored every call, always running at the construction-
+        # time default (1.0), regardless of what was passed here. Patching
+        # the already-loaded inference_cfg in place fixes this without
+        # reloading any weights (driving_multiplier is a pure runtime
+        # scalar consumed only inside execute(), not baked into the
+        # loaded model state).
+        self.pipeline.live_portrait_wrapper.inference_cfg.driving_multiplier = driving_multiplier
         start = time.perf_counter()
         wfp, wfp_concat = self.pipeline.execute(args)
         elapsed = time.perf_counter() - start

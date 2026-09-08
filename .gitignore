@@ -219,3 +219,4 @@ __marimo__/
 third_party/
 assets/*.mp4
 animations_bench/
+AutoGenResults
