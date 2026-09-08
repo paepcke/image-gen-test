@@ -217,3 +217,5 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 third_party/
+assets/*.mp4
+animations_bench/
