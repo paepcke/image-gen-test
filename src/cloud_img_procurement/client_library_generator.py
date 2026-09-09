@@ -7,8 +7,11 @@ a bounded, reviewable, one-time task).
 Lives at <proj-root>/src/cloud_img_procurement/client_library_generator.py.
 5 races x 2 sexes x 3 age ranges = 30 buckets.
 
+Reads the OpenAI API key (and org id) from $HOME/.ssh/openai_api_key.txt
+via common.api_credentials.OpenAICredentials -- no key is read from an
+environment variable or placed in code.
+
 Usage:
-    export OPENAI_API_KEY=...
     python src/cloud_img_procurement/client_library_generator.py \\
         --images-per-bucket 4
 """
@@ -26,6 +29,7 @@ sys.path.insert(0, str(PROJ_ROOT / "src"))
 
 from openai import OpenAI
 
+from common.api_credentials import OpenAICredentials
 from cloud_img_procurement.bucket_enums import AgeRange, Race, Sex
 from cloud_img_procurement.client_bucket import ClientBucket, OfficePromptTemplate
 
@@ -51,7 +55,8 @@ class ClientLibraryGenerator:
     def __init__(self, images_per_bucket: int = 4, force: bool = False):
         self.images_per_bucket = images_per_bucket
         self.force = force
-        self.client = OpenAI()
+        creds = OpenAICredentials()
+        self.client = OpenAI(api_key=creds.api_key, organization=creds.organization)
         self.prompt_template = OfficePromptTemplate()
         self.manifest: dict = {}
 
