@@ -220,3 +220,4 @@ third_party/
 assets/*.mp4
 animations_bench/
 AutoGenResults
+*/.DS_Store
