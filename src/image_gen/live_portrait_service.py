@@ -4,9 +4,10 @@
  # @Date:   2026-09-08 19:14:05
  # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/image_gen/live_portrait_service.py
  # @Last Modified by:   Andreas Paepcke
- # @Last Modified time: 2026-09-08 19:32:34
+ # @Last Modified time: 2026-09-09 12:16:23
  #
  # **********************************************************
+
 """
 Persistent-process LivePortrait service.
 
@@ -155,7 +156,7 @@ class LivePortraitService:
         """
         from src.utils.io import load_image_rgb, resize_to_limit
 
-        inf_cfg = self.live_portrait_wrapper.inference_cfg
+        inf_cfg = self.pipeline.live_portrait_wrapper.inference_cfg
         crop_cfg = self.pipeline.cropper.crop_cfg
         img_rgb = load_image_rgb(str(source))
         img_rgb = resize_to_limit(img_rgb, inf_cfg.source_max_dim, inf_cfg.source_division)
