@@ -131,3 +131,24 @@ class LivePortraitService:
         elapsed = time.perf_counter() - start
         log.info("generate() elapsed: %.2fs", elapsed)
         return {"elapsed_seconds": elapsed, "wfp": wfp, "wfp_concat": wfp_concat}
+
+    def validate_source_photo(self, source: Path) -> bool:
+        """Checks whether LivePortrait's cropper detects a face in `source`.
+
+        Runs only the crop/detection step, no animation -- cheap,
+        fast validation for a batch-generated photo library, used to
+        catch the "No face detected" failure execute() would otherwise
+        raise at runtime, offline instead.
+
+        :param source: Path to the candidate source photo.
+        :return: True if a face was detected and cropped, False
+            otherwise.
+        """
+        from src.utils.io import load_image_rgb, resize_to_limit
+
+        inf_cfg = self.live_portrait_wrapper.inference_cfg
+        crop_cfg = self.pipeline.cropper.crop_cfg
+        img_rgb = load_image_rgb(str(source))
+        img_rgb = resize_to_limit(img_rgb, inf_cfg.source_max_dim, inf_cfg.source_division)
+        crop_info = self.pipeline.cropper.crop_source_image(img_rgb, crop_cfg)
+        return crop_info is not None
