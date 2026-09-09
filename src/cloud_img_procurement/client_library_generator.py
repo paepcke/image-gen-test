@@ -4,9 +4,10 @@
  # @Date:   2026-09-08 19:26:19
  # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/client_library_generator.py
  # @Last Modified by:   Andreas Paepcke
- # @Last Modified time: 2026-09-08 19:31:47
+ # @Last Modified time: 2026-09-08 19:55:22
  #
  # **********************************************************
+
 """
 Batch generator for the pre-generated client-photo library, via GPT
 Image 2. One-time offline asset creation -- not a runtime dependency
@@ -63,13 +64,14 @@ class ClientLibraryGenerator:
         30-bucket run.
     """
 
-    MODEL = "gpt-image-2"
+    MODEL = "gpt-image-2.5-flare"
 
     def __init__(self, images_per_bucket: int = 4, force: bool = False,
-                 max_buckets: int = None):
+                 max_buckets: int = None, quality: str = "medium"):
         self.images_per_bucket = images_per_bucket
         self.force = force
         self.max_buckets = max_buckets
+        self.quality = quality
         creds = OpenAICredentials()
         self.client = OpenAI(api_key=creds.api_key, organization=creds.organization)
         self.prompt_template = OfficePromptTemplate()
@@ -105,7 +107,8 @@ class ClientLibraryGenerator:
 
             log.info("Generating %s [%d/%d]", bucket.key, i + 1, self.images_per_bucket)
             response = self.client.images.generate(
-                model=self.MODEL, prompt=prompt, size="1024x1024", n=1,
+                model=self.MODEL, prompt=prompt, size="1024x1024",
+                quality=self.quality, n=1,
             )
             image_bytes = base64.b64decode(response.data[0].b64_json)
             out_path.write_bytes(image_bytes)
@@ -144,13 +147,19 @@ class ClientLibraryGeneratorCLI:
                              help="Limit to the first N buckets, for a cheap "
                                   "smoke test (e.g. --max-buckets 2 "
                                   "--images-per-bucket 1) before the full run.")
+        parser.add_argument("--quality", choices=["low", "medium", "high", "auto"],
+                             default="medium",
+                             help="Image quality tier -- cost scales roughly "
+                                  "quadratically with this, not linearly. "
+                                  "'medium' is a reasonable default for a "
+                                  "reference-photo library (see chat).")
         self.args = parser.parse_args(argv)
 
     def run(self) -> None:
         """Builds and runs the generator with the parsed arguments."""
         generator = ClientLibraryGenerator(
             images_per_bucket=self.args.images_per_bucket, force=self.args.force,
-            max_buckets=self.args.max_buckets,
+            max_buckets=self.args.max_buckets, quality=self.args.quality,
         )
         generator.run()
 
