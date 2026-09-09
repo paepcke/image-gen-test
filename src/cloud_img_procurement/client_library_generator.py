@@ -4,7 +4,7 @@
  # @Date:   2026-09-08 19:26:19
  # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/client_library_generator.py
  # @Last Modified by:   Andreas Paepcke
- # @Last Modified time: 2026-09-08 19:55:22
+ # @Last Modified time: 2026-09-08 20:06:42
  #
  # **********************************************************
 
@@ -21,6 +21,9 @@ Reads the OpenAI API key (and org id) from $HOME/.ssh/openai_api_key.txt
 via common.api_credentials.OpenAICredentials -- no key is read from an
 environment variable or placed in code.
 
+Requires the editable install from setup_env.sh (`pip install -e .`)
+so common/cloud_img_procurement are importable by package name.
+
 Usage:
     python src/cloud_img_procurement/client_library_generator.py \\
         --images-per-bucket 4
@@ -31,11 +34,7 @@ import base64
 import itertools
 import json
 import logging
-import sys
 from pathlib import Path
-
-PROJ_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJ_ROOT / "src"))
 
 from openai import OpenAI
 
@@ -46,6 +45,7 @@ from cloud_img_procurement.client_bucket import ClientBucket, OfficePromptTempla
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("cloud_img_procurement")
 
+PROJ_ROOT = Path(__file__).resolve().parents[2]
 LIBRARY_ROOT = PROJ_ROOT / "assets" / "client_library"
 
 

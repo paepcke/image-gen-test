@@ -58,5 +58,12 @@ conda run -n "${ENV_NAME}" python -m huggingface_hub.commands.huggingface_cli \
     download KwaiVGI/LivePortrait --local-dir pretrained_weights --exclude "*.git*"
 
 echo "Setup done. Env: ${ENV_NAME}. Repo: ${DEPS_DIR}/LivePortrait"
+
+# Editable install of our own packages (common, cloud_img_procurement,
+# image_gen) per pyproject.toml -- lets scripts import them by package
+# name (e.g. `from cloud_img_procurement.bucket_enums import Race`)
+# instead of each script hand-inserting <proj-root>/src into sys.path.
+conda run -n "${ENV_NAME}" python -m pip install -e "${PROJ_ROOT}"
+
 echo "Next: drop a reference photo (torso+face) and a driving video into"
 echo "${PROJ_ROOT}/assets/, then run src/image_gen/benchmark_liveportrait.py"

@@ -4,9 +4,10 @@
  # @Date:   2026-09-08 19:13:51
  # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/validate_library.py
  # @Last Modified by:   Andreas Paepcke
- # @Last Modified time: 2026-09-08 19:32:07
+ # @Last Modified time: 2026-09-08 20:07:05
  #
  # **********************************************************
+
 """
 Validates every image in the generated client-photo library by
 confirming LivePortrait's face cropper detects a face in it --
@@ -14,6 +15,7 @@ catching generation failures (no face, bad crop, extreme angle)
 offline, before any of these images could reach a student mid-session.
 
 Lives at <proj-root>/src/cloud_img_procurement/validate_library.py.
+Requires the editable install from setup_env.sh (`pip install -e .`).
 
 Usage:
     conda run -n image-gen-test python src/cloud_img_procurement/validate_library.py --gpu 0
@@ -22,17 +24,14 @@ Usage:
 import argparse
 import json
 import logging
-import sys
 from pathlib import Path
-
-PROJ_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJ_ROOT / "src"))
 
 from image_gen.live_portrait_service import LivePortraitService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("cloud_img_procurement")
 
+PROJ_ROOT = Path(__file__).resolve().parents[2]
 LIBRARY_ROOT = PROJ_ROOT / "assets" / "client_library"
 
 

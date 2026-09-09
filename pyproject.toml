@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools >= 64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+
+name = "image-gen-test"
+description = "LivePortrait-based client photo/expression generation POC for the TherapistTrainer platform"
+version = "0.1.0"
+authors = [
+  {name = "Andreas Paepcke", email = "paepcke@cs.stanford.edu"}
+  ]
+maintainers = [
+  {name = "Andreas Paepcke", email = "paepcke@cs.stanford.edu"}
+  ]
+license = {text = "MIT License"}
+
+# NOTE: torch/torchvision are deliberately NOT listed here -- they need
+# the CUDA-specific --index-url (see setup_env.sh) to match quatro's
+# driver, which a plain dependencies entry can't express. ffmpeg is a
+# conda-forge binary, not a pip package, so it's also not listed here.
+# Both remain provisioned by setup_env.sh, not this file.
+dependencies = [
+    "openai>=1.99.0",
+    ]
+requires-python = ">= 3.10"
+
+# Establishes <proj-root>/src as the root of all Python packages
+# (common, cloud_img_procurement, image_gen):
+[tool.setuptools.packages.find]
+where = ["src"]

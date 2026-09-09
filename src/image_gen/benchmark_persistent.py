@@ -4,9 +4,10 @@
  # @Date:   2026-09-08 13:26:15
  # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/image_gen/benchmark_persistent.py
  # @Last Modified by:   Andreas Paepcke
- # @Last Modified time: 2026-09-08 19:32:33
+ # @Last Modified time: 2026-09-08 20:08:18
  #
  # **********************************************************
+
 """
 Benchmarks steady-state (weights-already-loaded) LivePortrait latency
 using a short, Live-Photo-scale driving clip rather than a full
@@ -24,7 +25,7 @@ import argparse
 import logging
 from pathlib import Path
 
-from live_portrait_service import LivePortraitService
+from image_gen.live_portrait_service import LivePortraitService
 
 log = logging.getLogger("image_gen")
 
