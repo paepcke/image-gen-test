@@ -1,3 +1,12 @@
+ # **********************************************************
+ #
+ # @Author: Andreas Paepcke
+ # @Date:   2026-09-08 19:21:17
+ # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/common/api_credentials.py
+ # @Last Modified by:   Andreas Paepcke
+ # @Last Modified time: 2026-09-08 19:32:09
+ #
+ # **********************************************************
 """
 Loads API credentials from files under $HOME/.ssh, per convention:
 API keys are never put directly in code or passed via environment

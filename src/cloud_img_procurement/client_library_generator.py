@@ -1,3 +1,12 @@
+ # **********************************************************
+ #
+ # @Author: Andreas Paepcke
+ # @Date:   2026-09-08 19:26:19
+ # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/client_library_generator.py
+ # @Last Modified by:   Andreas Paepcke
+ # @Last Modified time: 2026-09-08 19:31:47
+ #
+ # **********************************************************
 """
 Batch generator for the pre-generated client-photo library, via GPT
 Image 2. One-time offline asset creation -- not a runtime dependency

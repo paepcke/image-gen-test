@@ -1,3 +1,12 @@
+ # **********************************************************
+ #
+ # @Author: Andreas Paepcke
+ # @Date:   2026-09-08 19:13:19
+ # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/client_bucket.py
+ # @Last Modified by:   Andreas Paepcke
+ # @Last Modified time: 2026-09-08 19:32:03
+ #
+ # **********************************************************
 """
 ClientBucket: one race x sex x age_range combination, plus the prompt
 template used to generate its photos.

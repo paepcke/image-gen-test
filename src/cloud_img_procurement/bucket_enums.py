@@ -1,3 +1,12 @@
+ # **********************************************************
+ #
+ # @Author: Andreas Paepcke
+ # @Date:   2026-09-08 19:12:44
+ # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/bucket_enums.py
+ # @Last Modified by:   Andreas Paepcke
+ # @Last Modified time: 2026-09-08 19:32:01
+ #
+ # **********************************************************
 """
 Enums for the client-photo bucket dimensions: race, sex, age range.
 
