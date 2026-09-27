@@ -1,0 +1,296 @@
+#!/usr/bin/env python
+# **********************************************************
+# @Author: Andreas Paepcke
+# @Date:   2026-09-26 17:13:17
+# @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/posture_expression_combiner.py
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2026-09-26 17:14:31
+# **********************************************************
+
+"""
+Combines the two orthogonal axes of the simulated-client pipeline into
+one full matrix per bucket photo:
+
+  * posture (torso/hands) -- produced by GPT Image 2.5 edits, via
+    cloud_img_procurement.posture_variant_generator.PostureVariantGenerator
+  * facial expression -- produced by LivePortrait, via
+    image_gen.live_portrait_service.LivePortraitService
+
+These two stages don't interfere with each other: LivePortraitService
+runs in single-image-driving mode here, and with a single-frame driving
+image, LivePortrait's frame-0 pose is used as its own baseline, so the
+source's original head pose is preserved exactly (see
+live_portrait_service.py's own generate() docstring) -- meaning it never
+touches the torso or hands a posture edit put there. So each posture
+variant of a bucket photo (neutral, shoulders_raised, fists_clenched)
+can be used as a LivePortrait *source* for every emotion driving image,
+independently, without one stage undoing the other's work (see chat).
+
+Per bucket photo this produces 3 postures x N driving emotions distinct
+animated clips, all sharing one identity.
+
+Per-emotion driving_multiplier values below are the ones calibrated in
+an earlier session against a reference client photo (see chat / project
+memory) -- not the LivePortrait or ArgumentConfig defaults. 'fear' has
+no calibrated value (that session found 'anxiety' more clinically
+relevant and calibrated that instead), so it falls back to 1.0; adjust
+FEAR_FALLBACK_MULTIPLIER below if you calibrate it.
+
+CAVEAT -- where this needs to run: LivePortraitService needs one of
+quatro's GPUs and the third_party/LivePortrait checkout, so this script
+is a quatro-only script, same as validate_library.py. Unless
+--skip-posture is passed, it *also* calls the OpenAI API for each
+posture edit, so quatro needs outbound network access to OpenAI for a
+full run. If quatro can't reach OpenAI, pre-generate the posture
+variants elsewhere with posture_variant_generator.py, copy the
+resulting *_shoulders_raised.png / *_fists_clenched.png files into
+assets/client_library/<bucket>/ alongside the bases, then run this
+script with --skip-posture so it only drives LivePortrait.
+
+Lives at <proj-root>/src/image_gen/posture_expression_combiner.py.
+Requires the editable install from setup_env.sh (`pip install -e .`).
+
+Usage:
+    conda run -n image-gen-test python src/image_gen/posture_expression_combiner.py \\
+        --gpu 0 --max-buckets 1
+"""
+
+import argparse
+import json
+import logging
+import re
+from pathlib import Path
+
+from cloud_img_procurement.posture_variant_generator import (
+    POSTURE_EDIT_PROMPTS, PostureVariantGenerator,
+)
+from image_gen.live_portrait_service import LivePortraitService
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+log = logging.getLogger("image_gen")
+
+PROJ_ROOT = Path(__file__).resolve().parents[2]
+LIBRARY_ROOT = PROJ_ROOT / "assets" / "client_library"
+DRIVING_IMAGES_DIR = PROJ_ROOT / "assets"
+ANIMATED_ROOT = PROJ_ROOT / "assets" / "client_library_animated"
+
+# Calibrated against a reference client photo (see chat / project
+# memory: /areas/liveportrait-multipliers.md). Keys are driving-image
+# stems (case-insensitive match against DRIVING_IMAGES_DIR/*.png).
+DRIVING_MULTIPLIERS = {
+    "sadness": 2.0,
+    "contempt": 2.0,
+    "surprise": 1.5,
+    "anger": 2.0,
+    "happiness": 0.5,
+    "anxiety": 1.5,
+    "disgust": 1.5,
+}
+FEAR_FALLBACK_MULTIPLIER = 1.0  # not separately calibrated -- see docstring
+
+# A "base" bucket image is named '..._NN.png' (client_bucket.py's
+# image_filename()); a posture variant of it is named
+# '..._NN_<posture>.png'. This tells the two apart when re-globbing a
+# bucket directory that already contains generated variants, so a
+# variant is never mistaken for a new base image to process.
+BASE_IMAGE_STEM_PATTERN = re.compile(r"_\d{2}$")
+
+
+class PostureExpressionCombiner:
+    """Produces the full posture x emotion matrix for the client library.
+
+    :param gpu_index: Physical GPU index (0, 1, or 2 on quatro) to pin
+        LivePortrait to.
+    :param quality: Image quality tier passed to PostureVariantGenerator
+        for posture edits ('low', 'medium', 'high', 'xhigh', 'max', or
+        'auto').
+    :param skip_posture: If True, never call the OpenAI API -- assumes
+        posture variant files already exist next to each base image
+        (e.g. generated earlier, or copied in from elsewhere) and
+        raises FileNotFoundError if one is missing.
+    :param force_posture: Regenerate posture variants even if the
+        target file already exists. Ignored when skip_posture is True.
+    """
+
+    def __init__(self, gpu_index: int, quality: str = "medium",
+                 skip_posture: bool = False, force_posture: bool = False):
+        self.skip_posture = skip_posture
+        self.force_posture = force_posture
+        self.posture_gen = None if skip_posture else PostureVariantGenerator(quality=quality)
+        # Constructed after posture_gen: LivePortraitService sets
+        # CUDA_VISIBLE_DEVICES and must be the first thing in this
+        # process to import torch/onnxruntime (see its own docstring).
+        # PostureVariantGenerator only imports the openai package, so
+        # constructing it first is safe.
+        self.lp_service = LivePortraitService(gpu_index=gpu_index)
+        self.driving_images = self._discover_driving_images()
+        self.manifest: dict = {}
+
+    #------------------------------------
+    # _discover_driving_images
+    #-------------------
+
+    def _discover_driving_images(self) -> list:
+        """Finds the emotion driving photos directly under assets/.
+
+        :return: Sorted list of Paths (e.g. assets/Anger.png, ...).
+        """
+        images = sorted(DRIVING_IMAGES_DIR.glob("*.png"))
+        if not images:
+            raise FileNotFoundError(
+                f"No driving images (*.png) found directly under {DRIVING_IMAGES_DIR}")
+        log.info("Found %d driving emotion images: %s",
+                  len(images), [p.stem for p in images])
+        return images
+
+    #------------------------------------
+    # is_base_image
+    #-------------------
+
+    @staticmethod
+    def is_base_image(path: Path) -> bool:
+        """True if path is a bucket base photo, not a posture variant of one.
+
+        :param path: Candidate image path.
+        :return: True for '..._00.png'-style base images; False for
+            '..._00_fists_clenched.png'-style variants.
+        """
+        return bool(BASE_IMAGE_STEM_PATTERN.search(path.stem))
+
+    #------------------------------------
+    # posture_sources_for
+    #-------------------
+
+    def posture_sources_for(self, base_image_path: Path) -> dict:
+        """Resolves (or generates) the 3 posture-variant sources for one base photo.
+
+        :param base_image_path: Path to a bucket base photo (e.g.
+            assets/client_library/caucasian_female_20s-30s/caucasian_female_20s-30s_00.png).
+        :return: Dict {posture_name: Path}, posture_name one of
+            'neutral', 'shoulders_raised', 'fists_clenched'. 'neutral'
+            maps to base_image_path itself -- no edit needed.
+        :raises FileNotFoundError: if skip_posture is True and a
+            variant file doesn't already exist.
+        """
+        sources = {"neutral": base_image_path}
+        for posture in POSTURE_EDIT_PROMPTS:
+            variant_path = base_image_path.with_name(
+                f"{base_image_path.stem}_{posture}{base_image_path.suffix}")
+            if self.skip_posture:
+                if not variant_path.exists():
+                    raise FileNotFoundError(
+                        f"--skip-posture was passed but {variant_path} doesn't "
+                        f"exist. Generate it first, or drop --skip-posture.")
+            elif variant_path.exists() and not self.force_posture:
+                log.info("Reusing existing posture variant %s", variant_path.name)
+            else:
+                self.posture_gen.generate_variant(base_image_path, posture, variant_path)
+            sources[posture] = variant_path
+        return sources
+
+    #------------------------------------
+    # combine_bucket_image
+    #-------------------
+
+    def combine_bucket_image(self, base_image_path: Path) -> dict:
+        """Runs every posture x emotion combination for one base bucket photo.
+
+        :param base_image_path: Path to a bucket base photo.
+        :return: Dict {posture_name: {emotion: output_file_path_str}}.
+        """
+        bucket_key = base_image_path.parent.name
+        sources = self.posture_sources_for(base_image_path)
+        results: dict = {}
+
+        for posture_name, source_path in sources.items():
+            results[posture_name] = {}
+            output_dir = ANIMATED_ROOT / bucket_key / base_image_path.stem / posture_name
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            for driving_path in self.driving_images:
+                emotion = driving_path.stem
+                multiplier = DRIVING_MULTIPLIERS.get(
+                    emotion.lower(), FEAR_FALLBACK_MULTIPLIER)
+                log.info("%s / %s / %s (multiplier=%.1f)",
+                          bucket_key, posture_name, emotion, multiplier)
+                outcome = self.lp_service.generate(
+                    source=source_path, driving=driving_path,
+                    output_dir=output_dir, driving_multiplier=multiplier,
+                )
+                results[posture_name][emotion] = str(outcome["wfp"])
+
+        return results
+
+    #------------------------------------
+    # combine_all
+    #-------------------
+
+    def combine_all(self, max_buckets: int = None) -> None:
+        """Runs combine_bucket_image() over every base photo in the library.
+
+        :param max_buckets: If set, only process the first N distinct
+            bucket subdirectories (a cheap smoke test), not N images.
+        """
+        base_images = sorted(p for p in LIBRARY_ROOT.glob("*/*.png") if self.is_base_image(p))
+        if not base_images:
+            raise FileNotFoundError(
+                f"No base images found under {LIBRARY_ROOT} -- run "
+                f"client_library_generator.py first.")
+
+        if max_buckets is not None:
+            bucket_keys_seen = []
+            limited = []
+            for p in base_images:
+                key = p.parent.name
+                if key not in bucket_keys_seen:
+                    if len(bucket_keys_seen) >= max_buckets:
+                        break
+                    bucket_keys_seen.append(key)
+                limited.append(p)
+            base_images = limited
+            log.info("Limiting run to first %d bucket(s) (smoke test)", max_buckets)
+
+        for base_image_path in base_images:
+            key = f"{base_image_path.parent.name}/{base_image_path.stem}"
+            self.manifest[key] = self.combine_bucket_image(base_image_path)
+
+        manifest_path = ANIMATED_ROOT / "combine_manifest.json"
+        manifest_path.write_text(json.dumps(self.manifest, indent=2))
+        log.info("Wrote manifest: %s", manifest_path)
+
+
+class PostureExpressionCombinerCLI:
+    """Parses CLI arguments and runs PostureExpressionCombiner.
+
+    :param argv: Argument list to parse (defaults to sys.argv).
+    """
+
+    def __init__(self, argv=None):
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("--gpu", type=int, required=True, choices=[0, 1, 2])
+        parser.add_argument("--max-buckets", type=int, default=None,
+                             help="Limit to the first N bucket subdirectories, "
+                                  "for a cheap smoke test before the full run.")
+        parser.add_argument("--skip-posture", action="store_true",
+                             help="Never call the OpenAI API; require posture "
+                                  "variant files to already exist next to each "
+                                  "base image.")
+        parser.add_argument("--force-posture", action="store_true",
+                             help="Regenerate posture variants even if already "
+                                  "present. Ignored with --skip-posture.")
+        parser.add_argument("--quality", choices=["low", "medium", "high", "xhigh", "max", "auto"],
+                             default="medium",
+                             help="Image quality tier for posture edits.")
+        self.args = parser.parse_args(argv)
+
+    def run(self) -> None:
+        """Builds and runs the combiner with the parsed arguments."""
+        combiner = PostureExpressionCombiner(
+            gpu_index=self.args.gpu, quality=self.args.quality,
+            skip_posture=self.args.skip_posture, force_posture=self.args.force_posture,
+        )
+        combiner.combine_all(max_buckets=self.args.max_buckets)
+
+
+if __name__ == "__main__":
+    PostureExpressionCombinerCLI().run()
