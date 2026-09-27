@@ -2,9 +2,9 @@
 # **********************************************************
 # @Author: Andreas Paepcke
 # @Date:   2026-09-24 18:12:40
-# @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/posture_variant_generator.py
+# @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/posture_variant_generator.py
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2026-09-24 18:13:13
+# @Last Modified time: 2026-09-27 13:51:24
 # **********************************************************
 
 """
@@ -192,10 +192,12 @@ class PostureVariantGeneratorCLI:
             out_paths = generator.generate_all_variants(self.args.base)
             for posture, path in out_paths.items():
                 log.info("%s -> %s", posture, path)
+            log.info("New images below: %s", self.args.base.resolve().parent)
         else:
             out_path = generator.generate_variant(
                 self.args.base, self.args.posture, self.args.out)
             log.info("Done: %s", out_path)
+            log.info("New images below: %s", out_path.resolve().parent)
 
 
 if __name__ == "__main__":

@@ -2,9 +2,9 @@
 # **********************************************************
 # @Author: Andreas Paepcke
 # @Date:   2026-09-26 17:13:17
-# @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/posture_expression_combiner.py
+# @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/posture_expression_combiner.py
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2026-09-26 17:14:31
+# @Last Modified time: 2026-09-27 13:51:24
 # **********************************************************
 
 """
@@ -47,11 +47,17 @@ resulting *_shoulders_raised.png / *_fists_clenched.png files into
 assets/client_library/<bucket>/ alongside the bases, then run this
 script with --skip-posture so it only drives LivePortrait.
 
-Lives at <proj-root>/src/image_gen/posture_expression_combiner.py.
+Lives at <proj-root>/src/cloud_img_procurement/posture_expression_combiner.py --
+alongside the other batch-asset-production scripts (client_library_generator.py,
+posture_variant_generator.py, validate_library.py), even though it needs a GPU
+and imports image_gen.live_portrait_service to do its job -- validate_library.py
+already crosses that same boundary, so this follows the established pattern
+rather than being grouped by which library it happens to import.
+
 Requires the editable install from setup_env.sh (`pip install -e .`).
 
 Usage:
-    conda run -n image-gen-test python src/image_gen/posture_expression_combiner.py \\
+    conda run -n therapist-img-gen python src/cloud_img_procurement/posture_expression_combiner.py \\
         --gpu 0 --max-buckets 1
 """
 
@@ -87,6 +93,14 @@ DRIVING_MULTIPLIERS = {
     "disgust": 1.5,
 }
 FEAR_FALLBACK_MULTIPLIER = 1.0  # not separately calibrated -- see docstring
+
+# Only files with one of these (case-insensitive) stems are treated as
+# emotion driving images by _discover_driving_images(). assets/ also
+# holds non-emotion photos -- e.g. clientInTherapyOfficeIsolated.png,
+# the earlier single-photo demo's source image -- and a blind glob of
+# every *.png under assets/ would sweep those in as a bogus "emotion"
+# too (see chat: this bit us on the first real smoke-test run).
+KNOWN_EMOTIONS = set(DRIVING_MULTIPLIERS) | {"fear"}
 
 # A "base" bucket image is named '..._NN.png' (client_bucket.py's
 # image_filename()); a posture variant of it is named
@@ -133,12 +147,21 @@ class PostureExpressionCombiner:
     def _discover_driving_images(self) -> list:
         """Finds the emotion driving photos directly under assets/.
 
+        Filters to recognized emotion names (KNOWN_EMOTIONS) rather
+        than globbing every *.png under assets/ -- that directory also
+        holds non-emotion photos, which would otherwise be swept in as
+        a bogus extra "emotion".
+
         :return: Sorted list of Paths (e.g. assets/Anger.png, ...).
         """
-        images = sorted(DRIVING_IMAGES_DIR.glob("*.png"))
+        images = sorted(
+            p for p in DRIVING_IMAGES_DIR.glob("*.png")
+            if p.stem.lower() in KNOWN_EMOTIONS
+        )
         if not images:
             raise FileNotFoundError(
-                f"No driving images (*.png) found directly under {DRIVING_IMAGES_DIR}")
+                f"No recognized emotion driving images (one of {sorted(KNOWN_EMOTIONS)}) "
+                f"found directly under {DRIVING_IMAGES_DIR}")
         log.info("Found %d driving emotion images: %s",
                   len(images), [p.stem for p in images])
         return images
@@ -257,6 +280,7 @@ class PostureExpressionCombiner:
         manifest_path = ANIMATED_ROOT / "combine_manifest.json"
         manifest_path.write_text(json.dumps(self.manifest, indent=2))
         log.info("Wrote manifest: %s", manifest_path)
+        log.info("New images below: %s", ANIMATED_ROOT)
 
 
 class PostureExpressionCombinerCLI:

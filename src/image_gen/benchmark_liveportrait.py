@@ -1,11 +1,9 @@
  # **********************************************************
- #
  # @Author: Andreas Paepcke
  # @Date:   2026-09-08 13:26:15
- # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/image_gen/benchmark_liveportrait.py
+ # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/image_gen/benchmark_liveportrait.py
  # @Last Modified by:   Andreas Paepcke
- # @Last Modified time: 2026-09-08 19:32:31
- #
+ # @Last Modified time: 2026-09-27 13:43:09
  # **********************************************************
 """
 Standalone timing harness for LivePortrait on quatro.

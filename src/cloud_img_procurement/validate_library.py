@@ -1,11 +1,9 @@
  # **********************************************************
- #
  # @Author: Andreas Paepcke
  # @Date:   2026-09-08 19:13:51
- # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/validate_library.py
+ # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/validate_library.py
  # @Last Modified by:   Andreas Paepcke
- # @Last Modified time: 2026-09-08 20:07:05
- #
+ # @Last Modified time: 2026-09-27 13:38:54
  # **********************************************************
 
 """

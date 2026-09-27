@@ -1,11 +1,9 @@
  # **********************************************************
- #
  # @Author: Andreas Paepcke
  # @Date:   2026-09-08 19:13:19
- # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/client_bucket.py
+ # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/client_bucket.py
  # @Last Modified by:   Andreas Paepcke
- # @Last Modified time: 2026-09-08 19:32:03
- #
+ # @Last Modified time: 2026-09-27 13:36:57
  # **********************************************************
 """
 ClientBucket: one race x sex x age_range combination, plus the prompt
@@ -33,9 +31,10 @@ class OfficePromptTemplate:
         "framed picture on a cream-colored wall, a small potted plant"
     )
     FRAMING_INSTRUCTION = (
-        "Tightly cropped composition showing the client's torso and "
-        "face, seated in the armchair. Client is facing mostly toward "
-        "the camera, well-lit, single subject, photorealistic."
+        "Medium-shot composition showing the client's face, torso, and "
+        "both hands resting in their lap or on the armrests, seated in "
+        "the armchair. Client is facing mostly toward the camera, "
+        "well-lit, single subject, photorealistic."
     )
 
     def build(self, bucket: "ClientBucket") -> str:

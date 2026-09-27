@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
+# *************************************************
+# @Author: Andreas Paepcke
+# @Date:   2026-09-08 20:06:14
+# @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/bash/setup_env.sh
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2026-09-27 13:36:09
+# *************************************************
+
 # Standalone LivePortrait POC setup — run on quatro, paepcke account, OUTSIDE the therapist repo.
-# <proj-root> = /home/paepcke/VSCodeWorkspaces/image-gen-test
+# <proj-root> = /home/paepcke/VSCodeWorkspaces/therapist-img-gen
+
 # Usage: bash src/image_gen/setup_env.sh
+    
 set -euo pipefail
 
 PROJ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ENV_NAME="image-gen-test"
+ENV_NAME="therapist-img-gen"
 DEPS_DIR="${PROJ_ROOT}/third_party"
 
 mkdir -p "${DEPS_DIR}"

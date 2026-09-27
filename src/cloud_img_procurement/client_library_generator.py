@@ -1,11 +1,9 @@
  # **********************************************************
- #
  # @Author: Andreas Paepcke
  # @Date:   2026-09-08 19:26:19
- # @File:   /Users/paepcke/VSCodeWorkspaces/image-gen-test/src/cloud_img_procurement/client_library_generator.py
+ # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/client_library_generator.py
  # @Last Modified by:   Andreas Paepcke
- # @Last Modified time: 2026-09-08 20:06:42
- #
+ # @Last Modified time: 2026-09-27 13:51:24
  # **********************************************************
 
 """
@@ -130,6 +128,7 @@ class ClientLibraryGenerator:
         manifest_path = LIBRARY_ROOT / "manifest.json"
         manifest_path.write_text(json.dumps(self.manifest, indent=2))
         log.info("Wrote manifest: %s", manifest_path)
+        log.info("New images below: %s", LIBRARY_ROOT)
 
 
 class ClientLibraryGeneratorCLI:

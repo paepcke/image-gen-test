@@ -1,8 +1,12 @@
+ # **********************************************************
+ # @Author: Andreas Paepcke
+ # @Date:   2024-01-03 19:13:19
+ # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/commong/json_plus.py
+ # @Last Modified by:   Andreas Paepcke
+ # @Last Modified time: 2026-09-27 13:41:42
+ # **********************************************************
+
 '''
-Created on Jan 3, 2024
-
-@author: paepcke
-
 This module contains two classes: ClassSerializingEncoder, 
 and ClassSerializingDecoder. They supplement the 
 standard json package, and interact with it.

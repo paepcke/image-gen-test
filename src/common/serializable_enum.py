@@ -1,7 +1,12 @@
-'''
-Created on Dec 30, 2023
+ # **********************************************************
+ # @Author: Andreas Paepcke
+ # @Date:   2023-12-30 19:13:19
+ # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/common/serializable_enum.py
+ # @Last Modified by:   Andreas Paepcke
+ # @Last Modified time: 2026-09-27 13:42:39
+ # **********************************************************
 
-@author: paepcke
+'''
 
 NOTE: unittests for this module are in test_json_plus.py
 

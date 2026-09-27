@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+#**************************************************
+# @Author: Andreas Paepcke
+# @Date:   2026-09-08 13:26:15
+# @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/bash/trim_driving_video.sh/
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2026-09-27 13:35:43
+#**************************************************
+
+#!/usr/bin/env bash
 # One-time asset prep — NOT part of the runtime path. Trims a driving
 # video down to an Apple-Live-Photo-scale burst (~1.5s) before the first
 # LivePortrait call builds and caches its .pkl motion template.

@@ -1,3 +1,11 @@
+ # **********************************************************
+ # @Author: Andreas Paepcke
+ # @Date:   2026-09-08 19:13:19
+ # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/common/general_utils.py
+ # @Last Modified by:   Andreas Paepcke
+ # @Last Modified time: 2026-09-27 13:40:21
+ # **********************************************************
+
 '''
 Created on Jan 2, 2024
 
