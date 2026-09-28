@@ -241,21 +241,46 @@ afterward. Note `--image` selects one specific bucket image (e.g.
 `00`) -- `--posture all` only fans out across postures *for that one
 image*, not across every image in the bucket.
 
-To fix a whole batch at once: mark the offending images with the
-gallery's "redo" checkboxes, "Copy marked filenames", paste that list
-into a file (or pipe it straight in), and redo all of them in one
-call, at the same `--multiplier`:
+To fix a whole batch at once, without retyping each combo by hand:
 
-```bash
-pbpaste | conda run -n therapist-img-gen python src/cloud_img_procurement/reanimate_combo.py \
-    --worklist - --multiplier 1.3 --gpu 0
-```
+1. In the gallery, check the "redo" box under every image that looks
+   off, then click "Copy marked filenames" -- the bare filenames
+   (e.g. `asian_female_20s-30s_01_fists_clenched--Contempt.jpg`) are
+   now on the clipboard.
+2. Paste that list into a text file. **The gallery is usually opened
+   on your Mac, but `reanimate_combo.py` needs a GPU** (sextus,
+   quintus, or quatro) -- so this is normally a different machine
+   than the one you'll run the command on. Paste into a file on
+   whichever machine you're about to run the command from (a plain
+   editor, `pbpaste > worklist.txt` on the Mac itself if that's also
+   where you'll run it, or just paste into `nano`/`vim` over ssh on
+   the GPU box).
+3. Run `reanimate_combo.py` against that file with `--worklist`, all
+   at one `--multiplier`:
+
+   ```bash
+   conda run -n therapist-img-gen python src/cloud_img_procurement/reanimate_combo.py \
+       --worklist ~/tmp/badImages.txt --multiplier 1.3 --gpu 0
+   ```
+
+   e.g. `~/tmp/badImages.txt` containing:
+
+   ```
+   asian_female_20s-30s_01_fists_clenched--Contempt.jpg
+   asian_female_20s-30s_02_shoulders_raised--Contempt.jpg
+   asian_female_20s-30s_03--Contempt.jpg
+   ```
+
+   `--worklist` also accepts `-` to read from stdin instead of a
+   file, for piping directly (`pbpaste | ... --worklist - ...`) when
+   the gallery and the GPU machine really are the same box.
 
 Each line is parsed back into its bucket/image/posture/emotion from
 the filename itself, so a worklist can freely mix combos from
 different buckets, images, and even emotions -- only the multiplier
-is shared. Malformed lines are skipped with a warning rather than
-aborting the batch.
+is shared across the whole batch. Malformed lines are skipped with a
+warning rather than aborting the batch, and repeated/blank lines are
+harmless (de-duplicated, ignored).
 
 ## Where things end up
 

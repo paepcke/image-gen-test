@@ -4,7 +4,7 @@
 # @Date:   2026-09-26 17:13:17
 # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/posture_expression_combiner.py
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2026-09-27 18:02:40
+# @Last Modified time: 2026-09-28 13:21:11
 # **********************************************************
 
 """
@@ -36,6 +36,15 @@ no calibrated value (that session found 'anxiety' more clinically
 relevant and calibrated that instead), so it falls back to 1.0; adjust
 FEAR_FALLBACK_MULTIPLIER below if you calibrate it.
 
+Every posture also gets a "Neutral" emotion entry -- the un-animated
+posture source image itself (a file copy, no LivePortrait/GPU call),
+so "posture tense, face neutral" (e.g. shoulders_raised + Neutral) is
+its own addressable combo, not just available for posture=neutral.
+This completes the (bucket, posture, emotion) lookup grid the
+therapist_trainer integration relies on -- see chat / project memory
+(the ThTrainer image-integration design doc) -- rather than leaving
+posture=neutral as a special case with a differently-shaped directory.
+
 CAVEAT -- where this needs to run: LivePortraitService needs one of
 quatro's GPUs and the third_party/LivePortrait checkout, so this script
 is a quatro-only script, same as validate_library.py. Unless
@@ -59,12 +68,17 @@ Requires the editable install from setup_env.sh (`pip install -e .`).
 Usage:
     conda run -n therapist-img-gen python src/cloud_img_procurement/posture_expression_combiner.py \\
         --gpu 0 --max-buckets 1
+
+(A tree generated before NEUTRAL_EMOTION_LABEL support existed can be
+migrated with the one-time, throw-away backfill_neutral_once.py at the
+project root -- see that file; it's not part of this script's CLI.)
 """
 
 import argparse
 import json
 import logging
 import re
+import shutil
 from pathlib import Path
 
 from openai import OpenAIError
@@ -96,6 +110,14 @@ DRIVING_MULTIPLIERS = {
 }
 FEAR_FALLBACK_MULTIPLIER = 1.0  # not separately calibrated -- see docstring
 
+# The emotion label used for a posture's un-animated source image, kept
+# alongside the actual driving-image emotions in both the output
+# directory and combine_manifest.json (see module docstring). Matches
+# the capitalization convention of the driving images themselves
+# (Anger.png, Happiness.png, ...) even though matching elsewhere in
+# this project is case-insensitive.
+NEUTRAL_EMOTION_LABEL = "Neutral"
+
 # Only files with one of these (case-insensitive) stems are treated as
 # emotion driving images by _discover_driving_images(). assets/ also
 # holds non-emotion photos -- e.g. clientInTherapyOfficeIsolated.png,
@@ -110,6 +132,25 @@ KNOWN_EMOTIONS = set(DRIVING_MULTIPLIERS) | {"fear"}
 # bucket directory that already contains generated variants, so a
 # variant is never mistaken for a new base image to process.
 BASE_IMAGE_STEM_PATTERN = re.compile(r"_\d{2}$")
+
+
+def _to_manifest_path(path: Path) -> str:
+    """Renders a path for storage in combine_manifest.json, relative to PROJ_ROOT.
+
+    combine_manifest.json used to hold absolute, machine-specific
+    paths (PROJ_ROOT is wherever this checkout happens to sit), which
+    breaks the moment the manifest is read on a different machine or
+    from a copy of the repo elsewhere -- exactly the case for
+    distributing assets/client_library_animated/ into
+    therapist_trainer. Every project root here is the same shape
+    (<proj-root>/src/<package>/...), so any consumer can resolve this
+    back to an absolute path with its own PROJ_ROOT / Path(rel) join
+    -- validate_combinations.py already does exactly that.
+
+    :param path: Absolute path under PROJ_ROOT.
+    :return: POSIX-style path string relative to PROJ_ROOT.
+    """
+    return path.resolve().relative_to(PROJ_ROOT).as_posix()
 
 
 class PostureExpressionCombiner:
@@ -274,6 +315,32 @@ class PostureExpressionCombiner:
         return sources
 
     #------------------------------------
+    # _add_neutral_entry
+    #-------------------
+
+    @staticmethod
+    def _add_neutral_entry(source_path: Path, output_dir: Path) -> Path:
+        """Copies a posture's own source image in as its "Neutral" emotion entry.
+
+        Every posture source IS already its own neutral-face version
+        before any LivePortrait animation touches it, so this is a
+        file copy, not a GPU call. Idempotent (skips the copy if the
+        target already exists), so it's safe to call on every run,
+        including a resumed one.
+
+        :param source_path: The posture source image (a bucket base
+            photo for posture='neutral', or its shoulders_raised/
+            fists_clenched edit).
+        :param output_dir: That posture's output directory under
+            ANIMATED_ROOT.
+        :return: Path the copy lives at (existing or newly written).
+        """
+        target = output_dir / f"{source_path.stem}--{NEUTRAL_EMOTION_LABEL}{source_path.suffix}"
+        if not target.exists():
+            shutil.copyfile(source_path, target)
+        return target
+
+    #------------------------------------
     # combine_bucket_image
     #-------------------
 
@@ -281,7 +348,10 @@ class PostureExpressionCombiner:
         """Runs every posture x emotion combination for one base bucket photo.
 
         :param base_image_path: Path to a bucket base photo.
-        :return: Dict {posture_name: {emotion: output_file_path_str}}.
+        :return: Dict {posture_name: {emotion: output_file_path_str}},
+            where emotion includes NEUTRAL_EMOTION_LABEL alongside the
+            driving-image emotions (see _add_neutral_entry()), and each
+            path string is relative to PROJ_ROOT (see _to_manifest_path()).
         """
         bucket_key = base_image_path.parent.name
         sources = self.posture_sources_for(base_image_path)
@@ -299,6 +369,9 @@ class PostureExpressionCombiner:
             output_dir = ANIMATED_ROOT / bucket_key / base_image_path.stem / posture_name
             output_dir.mkdir(parents=True, exist_ok=True)
 
+            neutral_path = self._add_neutral_entry(source_path, output_dir)
+            results[posture_name][NEUTRAL_EMOTION_LABEL] = _to_manifest_path(neutral_path)
+
             for driving_path in self.driving_images:
                 emotion = driving_path.stem
                 multiplier = DRIVING_MULTIPLIERS.get(
@@ -310,7 +383,7 @@ class PostureExpressionCombiner:
                         source=source_path, driving=driving_path,
                         output_dir=output_dir, driving_multiplier=multiplier,
                     )
-                    results[posture_name][emotion] = str(outcome["wfp"])
+                    results[posture_name][emotion] = _to_manifest_path(outcome["wfp"])
                 except Exception as exc:
                     log.error(
                         "Animation failed for %s / %s / %s -- skipping just "
