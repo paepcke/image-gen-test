@@ -188,7 +188,7 @@ LivePortrait's face cropper detects a face in every animated frame
 the manifest says exists, catching a corrupt or degenerate animation
 offline. Driven from `combine_manifest.json`, so it already knows
 which combos the combiner itself skipped and doesn't re-flag those as
-failures:
+failures (46 secs):
 
 ```bash
 time conda run -n therapist-img-gen python src/cloud_img_procurement/validate_combinations.py --gpu 0
