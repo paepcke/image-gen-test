@@ -237,7 +237,25 @@ conda run -n therapist-img-gen python src/cloud_img_procurement/reanimate_combo.
 `--posture all` loops over neutral/shoulders_raised/fists_clenched in
 one call; pass a single posture to redo just one. This overwrites the
 existing file at the same path, so no manifest update is needed
-afterward.
+afterward. Note `--image` selects one specific bucket image (e.g.
+`00`) -- `--posture all` only fans out across postures *for that one
+image*, not across every image in the bucket.
+
+To fix a whole batch at once: mark the offending images with the
+gallery's "redo" checkboxes, "Copy marked filenames", paste that list
+into a file (or pipe it straight in), and redo all of them in one
+call, at the same `--multiplier`:
+
+```bash
+pbpaste | conda run -n therapist-img-gen python src/cloud_img_procurement/reanimate_combo.py \
+    --worklist - --multiplier 1.3 --gpu 0
+```
+
+Each line is parsed back into its bucket/image/posture/emotion from
+the filename itself, so a worklist can freely mix combos from
+different buckets, images, and even emotions -- only the multiplier
+is shared. Malformed lines are skipped with a warning rather than
+aborting the batch.
 
 ## Where things end up
 

@@ -4,7 +4,7 @@
 # @Date:   2026-09-28 09:52:25
 # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/reanimate_combo.py
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2026-09-28 09:52:25
+# @Last Modified time: 2026-09-28 10:14:46
 # **********************************************************
 
 """
@@ -30,10 +30,19 @@ Usage:
     conda run -n therapist-img-gen python src/cloud_img_procurement/reanimate_combo.py \\
         --bucket asian_female_20s-30s --image 00 --posture all \\
         --emotion Contempt --multiplier 1.3 --gpu 0
+
+    # Or: mark the offending images with the gallery's "redo" checkboxes,
+    # "Copy marked filenames", paste the clipboard into a file (or pipe
+    # it straight in), and redo all of them at once, same multiplier
+    # for every entry:
+    pbpaste | conda run -n therapist-img-gen python src/cloud_img_procurement/reanimate_combo.py \\
+        --worklist - --multiplier 1.3 --gpu 0
 """
 
 import argparse
 import logging
+import re
+import sys
 from pathlib import Path
 
 from image_gen.live_portrait_service import LivePortraitService
@@ -47,6 +56,38 @@ DRIVING_IMAGES_DIR = PROJ_ROOT / "assets"
 ANIMATED_ROOT = PROJ_ROOT / "assets" / "client_library_animated"
 
 POSTURES = ["neutral", "shoulders_raised", "fists_clenched"]
+EDITED_POSTURES = "|".join(p for p in POSTURES if p != "neutral")
+
+# Matches the bare filenames posture_expression_combiner.py /
+# reanimate_combo.py itself write, e.g.
+#   asian_female_20s-30s_00--Contempt.jpg                      (neutral)
+#   asian_female_20s-30s_00_shoulders_raised--Contempt.jpg
+#   asian_female_20s-30s_01_fists_clenched--Contempt.jpg
+# -- i.e. what the gallery's "Copy marked filenames" button hands you.
+# The bucket name itself may contain underscores, so the 2-digit image
+# index anchors the split: greedy '.+' on the left backs off only as
+# far as the last '_NN' it can find.
+FILENAME_PATTERN = re.compile(
+    rf"^(?P<bucket>.+)_(?P<image>\d{{2}})(?:_(?P<posture>{EDITED_POSTURES}))?"
+    rf"--(?P<emotion>[^.]+)\.\w+$"
+)
+
+
+def parse_combo_filename(filename: str) -> tuple:
+    """Parses one bare output filename into its (bucket, image, posture, emotion).
+
+    :param filename: A bare filename as the gallery shows it (no
+        path), e.g. 'asian_female_20s-30s_01_fists_clenched--Contempt.jpg'.
+    :return: (bucket, image_num, posture, emotion) tuple. posture is
+        'neutral' when the filename has no posture suffix.
+    :raises ValueError: if filename doesn't match the expected
+        '<bucket>_<NN>[_<posture>]--<emotion>.<ext>' shape.
+    """
+    match = FILENAME_PATTERN.match(filename.strip())
+    if not match:
+        raise ValueError(f"Doesn't look like a combiner output filename: {filename!r}")
+    posture = match.group("posture") or "neutral"
+    return match.group("bucket"), match.group("image"), posture, match.group("emotion")
 
 
 def _source_path_for(bucket: str, image_num: str, posture: str) -> Path:
@@ -124,28 +165,109 @@ class ComboReanimator:
 class ComboReanimatorCLI:
     """Parses CLI arguments and runs ComboReanimator.
 
+    Two mutually exclusive modes: name one combo (or --posture all for
+    one image) via --bucket/--image/--posture/--emotion, or point
+    --worklist at a list of bare filenames (one per line, e.g. the
+    gallery's "Copy marked filenames" clipboard output) to redo many
+    combos in one call, all at the same --multiplier.
+
     :param argv: Argument list to parse (defaults to sys.argv).
     """
 
     def __init__(self, argv=None):
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("--bucket", required=True,
-                             help="Bucket directory name, e.g. asian_female_20s-30s.")
-        parser.add_argument("--image", required=True,
+        parser.add_argument("--bucket",
+                             help="Bucket directory name, e.g. asian_female_20s-30s. "
+                                  "Required unless --worklist is given.")
+        parser.add_argument("--image",
                              help="Bucket image index as it appears in the "
-                                  "filename, e.g. 00.")
-        parser.add_argument("--posture", required=True,
-                             choices=POSTURES + ["all"])
-        parser.add_argument("--emotion", required=True,
-                             help="Driving-image stem, e.g. Contempt.")
+                                  "filename, e.g. 00. Required unless --worklist "
+                                  "is given.")
+        parser.add_argument("--posture", choices=POSTURES + ["all"],
+                             help="Required unless --worklist is given.")
+        parser.add_argument("--emotion",
+                             help="Driving-image stem, e.g. Contempt. Required "
+                                  "unless --worklist is given.")
+        parser.add_argument("--worklist", type=Path,
+                             help="Path to a file of bare output filenames, one "
+                                  "per line (blank lines and '#' comments "
+                                  "ignored) -- e.g. paste the gallery's 'Copy "
+                                  "marked filenames' clipboard output into a "
+                                  "file. Pass '-' to read from stdin. Redoes "
+                                  "every parsed combo at the same --multiplier. "
+                                  "Mutually exclusive with "
+                                  "--bucket/--image/--posture/--emotion.")
         parser.add_argument("--multiplier", type=float, required=True,
                              help="driving_multiplier to use for this run.")
         parser.add_argument("--gpu", type=int, required=True, choices=[0, 1, 2])
         self.args = parser.parse_args(argv)
 
+        explicit_given = any(
+            v is not None for v in
+            (self.args.bucket, self.args.image, self.args.posture, self.args.emotion))
+        if self.args.worklist and explicit_given:
+            parser.error("--worklist is mutually exclusive with "
+                          "--bucket/--image/--posture/--emotion.")
+        if not self.args.worklist and not all(
+                (self.args.bucket, self.args.image, self.args.posture, self.args.emotion)):
+            parser.error("Either --worklist, or all of "
+                          "--bucket/--image/--posture/--emotion, is required.")
+
+    #------------------------------------
+    # _combos_from_worklist
+    #-------------------
+
+    def _combos_from_worklist(self) -> list:
+        """Reads --worklist and parses each line into a (bucket, image, posture, emotion) tuple.
+
+        A malformed line is logged as a warning and skipped rather
+        than aborting the whole worklist -- same resilience philosophy
+        as posture_expression_combiner.py's per-combo failure handling.
+        Each line keeps its own emotion (parsed from that filename),
+        so a worklist can mix combos from different emotions in one
+        call -- only --multiplier is shared across all of them.
+
+        :return: List of (bucket, image_num, posture, emotion)
+            tuples, in first-seen order, de-duplicated.
+        """
+        if str(self.args.worklist) == "-":
+            lines = sys.stdin.read().splitlines()
+        else:
+            # .expanduser(): argparse's type=Path does NOT expand a
+            # leading '~' on its own -- without this, --worklist
+            # ~/tmp/badImages.txt would look for a literal './~/tmp/...'
+            # relative to cwd and fail with FileNotFoundError.
+            lines = self.args.worklist.expanduser().read_text().splitlines()
+
+        seen = set()
+        combos = []
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                combo = parse_combo_filename(line)
+            except ValueError as exc:
+                log.warning("Skipping worklist line -- %s", exc)
+                continue
+            if combo not in seen:
+                seen.add(combo)
+                combos.append(combo)
+        return combos
+
     def run(self) -> None:
         """Reanimates the requested combo(s)."""
         reanimator = ComboReanimator(gpu_index=self.args.gpu)
+
+        if self.args.worklist:
+            combos = self._combos_from_worklist()
+            log.info("Worklist: %d distinct combo(s) to reanimate at multiplier=%.2f",
+                      len(combos), self.args.multiplier)
+            for bucket, image_num, posture, emotion in combos:
+                reanimator.reanimate(bucket, image_num, posture,
+                                      emotion, self.args.multiplier)
+            return
+
         postures = POSTURES if self.args.posture == "all" else [self.args.posture]
         for posture in postures:
             reanimator.reanimate(
