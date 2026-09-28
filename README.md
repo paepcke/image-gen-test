@@ -159,7 +159,7 @@ Check `assets/client_library_animated/<bucket>/<image>/<posture>/`
 for that one bucket, and confirm the startup log line reads
 `Found 8 driving emotion images: [...]` (not 9 -- if you see a 9th
 entry, you're on a version of this script from before that bug was
-fixed; pull latest). Then run the full library:
+fixed; pull latest). Then run the full library (31 minutes):
 
 ```bash
 time conda run -n therapist-img-gen python src/cloud_img_procurement/posture_expression_combiner.py --gpu 0
@@ -171,6 +171,34 @@ right. It's resumable for posture variants (skips existing files
 unless `--force-posture`), but re-runs every LivePortrait animation
 each time it's invoked for a given bucket -- there's no
 skip-if-exists on that side yet.
+
+A single bad OpenAI edit (moderation rejection, etc.) or LivePortrait
+animation no longer aborts the whole run -- it's recorded and
+skipped, and the rest of the matrix keeps going. Check
+`assets/client_library_animated/combine_failures.json` afterward for
+anything that was skipped, and `combine_manifest.json` for the full
+posture/emotion -> output-file map (a skipped entry is `{"_skipped":
+...}` at the posture level, or `null` at the individual emotion
+level).
+
+## 7. Validate the posture x emotion matrix
+
+Same idea as step 5, but for the combiner's output: confirms
+LivePortrait's face cropper detects a face in every animated frame
+the manifest says exists, catching a corrupt or degenerate animation
+offline. Driven from `combine_manifest.json`, so it already knows
+which combos the combiner itself skipped and doesn't re-flag those as
+failures:
+
+```bash
+time conda run -n therapist-img-gen python src/cloud_img_procurement/validate_combinations.py --gpu 0
+```
+
+Check the tail of the output for `Passed: N  Failed: 0`. `Failed`
+entries and their paths land in
+`assets/client_library_animated/combine_validation_report.json`, so
+you can pull them up in the gallery (`image_gallery_generator.py`) by
+filename and decide whether to regenerate them.
 
 ## Where things end up
 
@@ -184,6 +212,10 @@ assets/
                                       <bucket>/<bucket>_NN/<posture>/<bucket>_NN--<emotion>.jpg
                                       <bucket>/<bucket>_NN/<posture>/<bucket>_NN--<emotion>_concat.jpg
                                       combine_manifest.json
+                                      combine_failures.json           (per-image/combo failures, if any)
+                                      combine_validation_report.json  (from validate_combinations.py)
+                                      gallery.html                    (from image_gallery_generator.py --root
+                                                                        assets/client_library_animated)
 ```
 
 ## Where this fits with therapist_trainer
