@@ -200,6 +200,45 @@ entries and their paths land in
 you can pull them up in the gallery (`image_gallery_generator.py`) by
 filename and decide whether to regenerate them.
 
+## 8. Browse the results in the gallery
+
+`validate_combinations.py` only catches outright failures (no face
+detected); it says nothing about whether an animation actually looks
+good. For that, eyeball everything in a plain static HTML gallery --
+no server, no dependencies beyond the stdlib, works the same whether
+you open it right where the images were generated or after copying
+`assets/` elsewhere:
+
+```bash
+conda run -n therapist-img-gen python src/cloud_img_procurement/image_gallery_generator.py \
+    --root assets/client_library_animated
+```
+
+Then open `assets/client_library_animated/gallery.html` in any
+browser. Images are grouped in collapsible sections by folder
+(bucket/image/posture), shown large with the bare filename
+underneath (no path -- handy for `find assets/ -name <filename>`), a
+text box live-filters by filename substring, and a "redo" checkbox
+under each image lets you mark ones to revisit -- "Copy marked
+filenames" puts the checked bare filenames on the clipboard.
+
+If a specific posture x emotion combo comes out too intense (or too
+flat) rather than outright broken, there's no need to redo the whole
+bucket or re-run the full matrix -- `reanimate_combo.py` regenerates
+just that combo in place, with an overridden `driving_multiplier`,
+at whatever output path the combiner already wrote:
+
+```bash
+conda run -n therapist-img-gen python src/cloud_img_procurement/reanimate_combo.py \
+    --bucket asian_female_20s-30s --image 00 --posture all \
+    --emotion Contempt --multiplier 1.3 --gpu 0
+```
+
+`--posture all` loops over neutral/shoulders_raised/fists_clenched in
+one call; pass a single posture to redo just one. This overwrites the
+existing file at the same path, so no manifest update is needed
+afterward.
+
 ## Where things end up
 
 ```
