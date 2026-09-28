@@ -46,9 +46,40 @@ bash src/bash/setup_env.sh
 This one script creates the conda env (`python=3.10`), installs
 torch for CUDA 12.x, clones `third_party/LivePortrait`, installs its
 `requirements.txt`, installs `ffmpeg` via conda-forge (no sudo
-needed), downloads the pretrained weights, and does an editable
-`pip install -e .` of this repo's own packages (`common`,
+needed), downloads the pretrained weights (scoping `HF_HUB_OFFLINE=0`
+around just that command, in case this machine's shell sets
+`HF_HUB_OFFLINE=1` globally for other local-model work), and does an
+editable `pip install -e .` of this repo's own packages (`common`,
 `cloud_img_procurement`, `image_gen`).
+
+Confirm the weights actually landed -- this is the one step in the
+script most likely to fail silently (network hiccup, disk quota,
+etc. without failing the script itself):
+
+```bash
+ls -la third_party/LivePortrait/pretrained_weights/liveportrait/base_models/
+```
+
+You should see non-empty `.pth` files: `appearance_feature_extractor.pth`,
+`motion_extractor.pth`, `warping_module.pth`, `spade_generator.pth`
+(plus `pretrained_weights/liveportrait/retargeting_models/`).
+
+**If it's empty or missing** (just a `.gitkeep`), re-run the download
+step by hand as a remedy. The most likely cause is `HF_HUB_OFFLINE=1`
+being set in this shell (`setup_env.sh` already scopes around it, but
+double-check if this fails again):
+
+```bash
+env | grep HF_HUB   # check whether HF_HUB_OFFLINE=1 is set here
+
+cd third_party/LivePortrait
+HF_HUB_OFFLINE=0 conda run -n therapist-img-gen python -m huggingface_hub.commands.huggingface_cli \
+    download KwaiVGI/LivePortrait --local-dir . --exclude "*.git*"
+cd ../..
+```
+
+This pulls several GB, so check disk space and network reachability
+to `huggingface.co` first if this machine's setup is unusual.
 
 ## 3. Fix the onnxruntime-gpu / CUDA mismatch
 
@@ -79,7 +110,7 @@ CUDA execution provider.
 ## 4. Generate the client photo library (one-time, offline)
 
 Never run this with the full defaults first -- smoke-test it, since
-each image is a billed OpenAI API call:
+each image is a billed OpenAI API call (~20 seconds):
 
 ```bash
 conda run -n therapist-img-gen python src/cloud_img_procurement/client_library_generator.py \
@@ -87,10 +118,10 @@ conda run -n therapist-img-gen python src/cloud_img_procurement/client_library_g
 ```
 
 Check the 2 resulting images (under `assets/client_library/`) look
-right, then run the full 30-bucket library:
+right, then run the full 30-bucket library ~(17 minutes):
 
 ```bash
-conda run -n therapist-img-gen python src/cloud_img_procurement/client_library_generator.py \
+time conda run -n therapist-img-gen python src/cloud_img_procurement/client_library_generator.py \
     --images-per-bucket 4
 ```
 
@@ -101,10 +132,10 @@ that already exists, unless you pass `--force`.
 
 Confirms LivePortrait's face cropper detects a face in every
 generated photo, offline, rather than discovering a bad one mid
-trainee-session:
+trainee-session (~8 secs):
 
 ```bash
-conda run -n therapist-img-gen python src/cloud_img_procurement/validate_library.py --gpu 0
+time conda run -n therapist-img-gen python src/cloud_img_procurement/validate_library.py --gpu 0
 ```
 
 Check the tail of the output for `Passed: N  Failed: 0`. Note the
@@ -117,10 +148,10 @@ actually has (sextus has one GPU: use `--gpu 0`; quintus has two:
 
 This combines each bucket photo's 3 posture variants (generated via
 OpenAI edits, cached next to the base photo) with every emotion
-driving image under `assets/`, via LivePortrait. Smoke-test first:
+driving image under `assets/`, via LivePortrait. Smoke-test first  (~2min5secs):
 
 ```bash
-conda run -n therapist-img-gen python src/cloud_img_procurement/posture_expression_combiner.py \
+time conda run -n therapist-img-gen python src/cloud_img_procurement/posture_expression_combiner.py \
     --gpu 0 --max-buckets 1
 ```
 
@@ -131,7 +162,7 @@ entry, you're on a version of this script from before that bug was
 fixed; pull latest). Then run the full library:
 
 ```bash
-conda run -n therapist-img-gen python src/cloud_img_procurement/posture_expression_combiner.py --gpu 0
+time conda run -n therapist-img-gen python src/cloud_img_procurement/posture_expression_combiner.py --gpu 0
 ```
 
 This is the slow, expensive step (30 buckets x 4 images x 3 postures
