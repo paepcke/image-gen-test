@@ -4,7 +4,7 @@
 # @Date:   2026-09-08 20:06:14
 # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/bash/setup_env.sh
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2026-09-27 13:36:09
+# @Last Modified time: 2026-09-27 17:01:26
 # *************************************************
 
 # Standalone LivePortrait POC setup — run on quatro, paepcke account, OUTSIDE the therapist repo.
@@ -63,9 +63,24 @@ conda run -n "${ENV_NAME}" python -m pip install -r requirements.txt
 # quatro and to keep this POC self-contained.
 conda install -n "${ENV_NAME}" -y -c conda-forge ffmpeg
 
-# Pretrained weights
-conda run -n "${ENV_NAME}" python -m huggingface_hub.commands.huggingface_cli \
-    download KwaiVGI/LivePortrait --local-dir pretrained_weights --exclude "*.git*"
+# Pretrained weights. Scoped HF_HUB_OFFLINE=0 -- some machines (e.g.
+# sextus) set HF_HUB_OFFLINE=1 globally in their shell rc file for
+# other local-model work; left alone, huggingface_hub silently refuses
+# the network and this step fails with OfflineModeIsEnabled while the
+# rest of the script keeps going, leaving pretrained_weights/ empty.
+# This scopes the override to just this one command instead of
+# touching the user's shell environment.
+#
+# --local-dir is "." (NOT "pretrained_weights"): the KwaiVGI/LivePortrait
+# HF repo already has a top-level folder literally named
+# pretrained_weights/ containing liveportrait/, liveportrait_animals/,
+# etc. Passing --local-dir pretrained_weights here (cwd is already
+# third_party/LivePortrait) double-nests it into
+# pretrained_weights/pretrained_weights/liveportrait/... which the code
+# then can't find. "." lands it at the expected single-level
+# pretrained_weights/liveportrait/base_models/... path.
+HF_HUB_OFFLINE=0 conda run -n "${ENV_NAME}" python -m huggingface_hub.commands.huggingface_cli \
+    download KwaiVGI/LivePortrait --local-dir . --exclude "*.git*"
 
 echo "Setup done. Env: ${ENV_NAME}. Repo: ${DEPS_DIR}/LivePortrait"
 

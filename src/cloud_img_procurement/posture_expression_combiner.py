@@ -4,7 +4,7 @@
 # @Date:   2026-09-26 17:13:17
 # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/posture_expression_combiner.py
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2026-09-27 13:51:24
+# @Last Modified time: 2026-09-27 18:02:40
 # **********************************************************
 
 """
@@ -66,6 +66,8 @@ import json
 import logging
 import re
 from pathlib import Path
+
+from openai import OpenAIError
 
 from cloud_img_procurement.posture_variant_generator import (
     POSTURE_EDIT_PROMPTS, PostureVariantGenerator,
@@ -139,6 +141,15 @@ class PostureExpressionCombiner:
         self.lp_service = LivePortraitService(gpu_index=gpu_index)
         self.driving_images = self._discover_driving_images()
         self.manifest: dict = {}
+        # Keyed by "<bucket>/<base-image-stem>" -> list of
+        # {stage, error_type, error} dicts. A single OpenAI moderation
+        # rejection or LivePortrait hiccup on one image used to crash
+        # the entire run (see chat: 32 minutes of work lost to one
+        # moderation_blocked edit) -- these are now caught and recorded
+        # here instead, so the run keeps going and you can review what
+        # got skipped afterward via combine_failures.json (and re-find
+        # the actual files with the gallery's filename search).
+        self.failures: dict = {}
 
     #------------------------------------
     # _discover_driving_images
@@ -181,6 +192,44 @@ class PostureExpressionCombiner:
         return bool(BASE_IMAGE_STEM_PATTERN.search(path.stem))
 
     #------------------------------------
+    # _record_failure
+    #-------------------
+
+    def _record_failure(self, base_image_path: Path, stage: str, error: Exception) -> None:
+        """Records a per-image failure without aborting the run.
+
+        :param base_image_path: The bucket base photo being processed
+            when the failure happened.
+        :param stage: Short label for what failed, e.g.
+            'posture_edit:shoulders_raised' or 'animate:neutral:anger'.
+        :param error: The exception that was caught.
+        """
+        key = f"{base_image_path.parent.name}/{base_image_path.stem}"
+        self.failures.setdefault(key, []).append({
+            "stage": stage,
+            "error_type": type(error).__name__,
+            "error": str(error),
+        })
+
+    #------------------------------------
+    # _write_manifest
+    #-------------------
+
+    def _write_manifest(self) -> None:
+        """Writes the manifest and failures list to disk.
+
+        Called after every bucket image, not just once at the end of
+        combine_all(), so a later failure -- another moderation
+        rejection, a GPU hiccup, anything -- can't erase already
+        -completed work the way it used to (see chat).
+        """
+        ANIMATED_ROOT.mkdir(parents=True, exist_ok=True)
+        (ANIMATED_ROOT / "combine_manifest.json").write_text(
+            json.dumps(self.manifest, indent=2))
+        (ANIMATED_ROOT / "combine_failures.json").write_text(
+            json.dumps(self.failures, indent=2))
+
+    #------------------------------------
     # posture_sources_for
     #-------------------
 
@@ -189,9 +238,12 @@ class PostureExpressionCombiner:
 
         :param base_image_path: Path to a bucket base photo (e.g.
             assets/client_library/caucasian_female_20s-30s/caucasian_female_20s-30s_00.png).
-        :return: Dict {posture_name: Path}, posture_name one of
+        :return: Dict {posture_name: Path or None}, posture_name one of
             'neutral', 'shoulders_raised', 'fists_clenched'. 'neutral'
-            maps to base_image_path itself -- no edit needed.
+            maps to base_image_path itself -- no edit needed. A value
+            of None means this posture's OpenAI edit failed (e.g. a
+            safety-system rejection) -- skip it rather than treating
+            it as a real source; see self.failures for why.
         :raises FileNotFoundError: if skip_posture is True and a
             variant file doesn't already exist.
         """
@@ -207,7 +259,17 @@ class PostureExpressionCombiner:
             elif variant_path.exists() and not self.force_posture:
                 log.info("Reusing existing posture variant %s", variant_path.name)
             else:
-                self.posture_gen.generate_variant(base_image_path, posture, variant_path)
+                try:
+                    self.posture_gen.generate_variant(base_image_path, posture, variant_path)
+                except OpenAIError as exc:
+                    log.error(
+                        "Posture edit failed for %s / %s -- skipping just this "
+                        "posture for this image and continuing (%s: %s)",
+                        base_image_path.name, posture, type(exc).__name__, exc)
+                    self._record_failure(
+                        base_image_path, stage=f"posture_edit:{posture}", error=exc)
+                    sources[posture] = None
+                    continue
             sources[posture] = variant_path
         return sources
 
@@ -226,6 +288,13 @@ class PostureExpressionCombiner:
         results: dict = {}
 
         for posture_name, source_path in sources.items():
+            if source_path is None:
+                log.warning(
+                    "Skipping %s / %s entirely -- its posture edit failed "
+                    "(see combine_failures.json)", bucket_key, posture_name)
+                results[posture_name] = {"_skipped": "posture_edit_failed"}
+                continue
+
             results[posture_name] = {}
             output_dir = ANIMATED_ROOT / bucket_key / base_image_path.stem / posture_name
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -236,11 +305,21 @@ class PostureExpressionCombiner:
                     emotion.lower(), FEAR_FALLBACK_MULTIPLIER)
                 log.info("%s / %s / %s (multiplier=%.1f)",
                           bucket_key, posture_name, emotion, multiplier)
-                outcome = self.lp_service.generate(
-                    source=source_path, driving=driving_path,
-                    output_dir=output_dir, driving_multiplier=multiplier,
-                )
-                results[posture_name][emotion] = str(outcome["wfp"])
+                try:
+                    outcome = self.lp_service.generate(
+                        source=source_path, driving=driving_path,
+                        output_dir=output_dir, driving_multiplier=multiplier,
+                    )
+                    results[posture_name][emotion] = str(outcome["wfp"])
+                except Exception as exc:
+                    log.error(
+                        "Animation failed for %s / %s / %s -- skipping just "
+                        "this one and continuing (%s: %s)",
+                        bucket_key, posture_name, emotion, type(exc).__name__, exc)
+                    self._record_failure(
+                        base_image_path, stage=f"animate:{posture_name}:{emotion}",
+                        error=exc)
+                    results[posture_name][emotion] = None
 
         return results
 
@@ -275,11 +354,28 @@ class PostureExpressionCombiner:
 
         for base_image_path in base_images:
             key = f"{base_image_path.parent.name}/{base_image_path.stem}"
-            self.manifest[key] = self.combine_bucket_image(base_image_path)
+            try:
+                self.manifest[key] = self.combine_bucket_image(base_image_path)
+            except Exception as exc:
+                # Last-resort net: anything that slips past the
+                # per-posture/per-animation handling above (a bug, an
+                # unanticipated error class) skips this one bucket
+                # image rather than taking down the whole run.
+                log.error(
+                    "Unexpected failure on %s -- skipping this bucket image "
+                    "entirely and continuing (%s: %s)",
+                    key, type(exc).__name__, exc)
+                self._record_failure(base_image_path, stage="bucket_image", error=exc)
+                self.manifest[key] = {"_skipped": "unexpected_error"}
+            # Written after every image, not just at the end, so a
+            # later failure can't erase progress already on disk.
+            self._write_manifest()
 
-        manifest_path = ANIMATED_ROOT / "combine_manifest.json"
-        manifest_path.write_text(json.dumps(self.manifest, indent=2))
-        log.info("Wrote manifest: %s", manifest_path)
+        log.info("Wrote manifest: %s", ANIMATED_ROOT / "combine_manifest.json")
+        if self.failures:
+            log.warning(
+                "%d bucket image(s) had at least one failure -- see %s",
+                len(self.failures), ANIMATED_ROOT / "combine_failures.json")
         log.info("New images below: %s", ANIMATED_ROOT)
 
 
