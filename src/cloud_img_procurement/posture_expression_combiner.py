@@ -4,7 +4,7 @@
 # @Date:   2026-09-26 17:13:17
 # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/posture_expression_combiner.py
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2026-09-28 17:51:56
+# @Last Modified time: 2026-09-28 18:58:51
 # **********************************************************
 
 """
@@ -142,7 +142,7 @@ KNOWN_EMOTIONS = set(DRIVING_MULTIPLIERS) | {"fear"}
 BASE_IMAGE_STEM_PATTERN = re.compile(r"_\d{2}$")
 
 
-def _to_manifest_path(path: Path) -> str:
+def _to_manifest_path(path) -> str:
     """Renders a path for storage in combine_manifest.json, relative to PROJ_ROOT.
 
     combine_manifest.json used to hold absolute, machine-specific
@@ -155,10 +155,13 @@ def _to_manifest_path(path: Path) -> str:
     back to an absolute path with its own PROJ_ROOT / Path(rel) join
     -- validate_combinations.py already does exactly that.
 
-    :param path: Absolute path under PROJ_ROOT.
+    :param path: Absolute path under PROJ_ROOT, as a Path or a str
+        (LivePortrait's execute() hands back its output paths as
+        plain strings, which used to crash this with
+        "'str' object has no attribute 'resolve'").
     :return: POSIX-style path string relative to PROJ_ROOT.
     """
-    return path.resolve().relative_to(PROJ_ROOT).as_posix()
+    return Path(path).resolve().relative_to(PROJ_ROOT).as_posix()
 
 
 class PostureExpressionCombiner:
