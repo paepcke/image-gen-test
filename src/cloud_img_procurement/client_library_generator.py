@@ -3,7 +3,7 @@
  # @Date:   2026-09-08 19:26:19
  # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/client_library_generator.py
  # @Last Modified by:   Andreas Paepcke
- # @Last Modified time: 2026-09-27 13:51:24
+ # @Last Modified time: 2026-09-28 17:51:56
  # **********************************************************
 
 """
@@ -13,7 +13,7 @@ Image 2. One-time offline asset creation -- not a runtime dependency
 a bounded, reviewable, one-time task).
 
 Lives at <proj-root>/src/cloud_img_procurement/client_library_generator.py.
-5 races x 2 sexes x 3 age ranges = 30 buckets.
+6 races x 2 sexes x 3 age ranges = 36 buckets.
 
 Reads the OpenAI API key (and org id) from $HOME/.ssh/openai_api_key.txt
 via common.api_credentials.OpenAICredentials -- no key is read from an
@@ -25,6 +25,12 @@ so common/cloud_img_procurement are importable by package name.
 Usage:
     python src/cloud_img_procurement/client_library_generator.py \\
         --images-per-bucket 4
+
+    # Only (re)fill in one race, e.g. after adding it to the Race enum.
+    # Existing images are skipped, and manifest.json is merged rather
+    # than replaced, so other races' entries are preserved:
+    python src/cloud_img_procurement/client_library_generator.py \\
+        --images-per-bucket 4 --race middle_eastern
 """
 
 import argparse
@@ -59,16 +65,22 @@ class ClientLibraryGenerator:
     :param max_buckets: If set, only process the first N buckets --
         for a cheap smoke test of the whole pipeline (prompt, API
         call, file save, resumability) before committing to a full
-        30-bucket run.
+        run. Applied after the races filter.
+    :param races: If set, only process buckets of these Race members
+        (e.g. [Race.MIDDLE_EASTERN]). manifest.json is merged with any
+        existing one, so a filtered run never drops other races'
+        entries.
     """
 
     MODEL = "gpt-image-2.5-flare"
 
     def __init__(self, images_per_bucket: int = 4, force: bool = False,
-                 max_buckets: int = None, quality: str = "medium"):
+                 max_buckets: int = None, quality: str = "medium",
+                 races: list = None):
         self.images_per_bucket = images_per_bucket
         self.force = force
         self.max_buckets = max_buckets
+        self.races = races
         self.quality = quality
         creds = OpenAICredentials()
         self.client = OpenAI(api_key=creds.api_key, organization=creds.organization)
@@ -78,11 +90,13 @@ class ClientLibraryGenerator:
     def all_buckets(self) -> list:
         """Enumerates every (race, sex, age_range) combination.
 
-        :return: List of ClientBucket instances.
+        :return: List of ClientBucket instances (restricted to
+            self.races, if that was given).
         """
         return [
             ClientBucket(race=r, sex=s, age_range=a)
             for r, s, a in itertools.product(Race, Sex, AgeRange)
+            if not self.races or r in self.races
         ]
 
     def generate_bucket(self, bucket: ClientBucket) -> list:
@@ -122,10 +136,17 @@ class ClientLibraryGenerator:
             log.info("Limiting run to first %d of %d buckets (smoke test)",
                       self.max_buckets, len(self.all_buckets()))
 
+        # Merge into any existing manifest rather than replacing it, so
+        # a races-filtered (or --max-buckets) run doesn't erase the
+        # entries of buckets it didn't touch. A corrupt manifest raises
+        # here on purpose: better to stop than to silently overwrite it.
+        manifest_path = LIBRARY_ROOT / "manifest.json"
+        if manifest_path.exists():
+            self.manifest = json.loads(manifest_path.read_text())
+
         for bucket in buckets:
             self.manifest[bucket.key] = self.generate_bucket(bucket)
 
-        manifest_path = LIBRARY_ROOT / "manifest.json"
         manifest_path.write_text(json.dumps(self.manifest, indent=2))
         log.info("Wrote manifest: %s", manifest_path)
         log.info("New images below: %s", LIBRARY_ROOT)
@@ -146,6 +167,10 @@ class ClientLibraryGeneratorCLI:
                              help="Limit to the first N buckets, for a cheap "
                                   "smoke test (e.g. --max-buckets 2 "
                                   "--images-per-bucket 1) before the full run.")
+        parser.add_argument("--race", action="append", dest="races",
+                             choices=[r.value for r in Race], default=None,
+                             help="Only process this race (repeatable). "
+                                  "Default: all races.")
         parser.add_argument("--quality", choices=["low", "medium", "high", "auto"],
                              default="medium",
                              help="Image quality tier -- cost scales roughly "
@@ -159,6 +184,8 @@ class ClientLibraryGeneratorCLI:
         generator = ClientLibraryGenerator(
             images_per_bucket=self.args.images_per_bucket, force=self.args.force,
             max_buckets=self.args.max_buckets, quality=self.args.quality,
+            races=[Race.from_value(v) for v in self.args.races]
+                   if self.args.races else None,
         )
         generator.run()
 

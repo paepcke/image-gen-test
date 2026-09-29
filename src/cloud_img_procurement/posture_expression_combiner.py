@@ -4,7 +4,7 @@
 # @Date:   2026-09-26 17:13:17
 # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/posture_expression_combiner.py
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2026-09-28 13:21:11
+# @Last Modified time: 2026-09-28 17:51:56
 # **********************************************************
 
 """
@@ -69,6 +69,13 @@ Usage:
     conda run -n therapist-img-gen python src/cloud_img_procurement/posture_expression_combiner.py \\
         --gpu 0 --max-buckets 1
 
+    # Only process one race (repeatable), e.g. after adding it to the
+    # Race enum. Existing posture variants are reused, and
+    # combine_manifest.json / combine_failures.json are merged rather
+    # than replaced, so other races' entries are preserved:
+    conda run -n therapist-img-gen python src/cloud_img_procurement/posture_expression_combiner.py \\
+        --gpu 0 --race middle_eastern
+
 (A tree generated before NEUTRAL_EMOTION_LABEL support existed can be
 migrated with the one-time, throw-away backfill_neutral_once.py at the
 project root -- see that file; it's not part of this script's CLI.)
@@ -83,6 +90,7 @@ from pathlib import Path
 
 from openai import OpenAIError
 
+from cloud_img_procurement.bucket_enums import Race
 from cloud_img_procurement.posture_variant_generator import (
     POSTURE_EDIT_PROMPTS, PostureVariantGenerator,
 )
@@ -253,6 +261,26 @@ class PostureExpressionCombiner:
         })
 
     #------------------------------------
+    # _load_existing_state
+    #-------------------
+
+    def _load_existing_state(self) -> None:
+        """Seeds self.manifest and self.failures from the files on disk.
+
+        Makes every run *merge* into the existing combine_manifest.json
+        and combine_failures.json instead of replacing them, so a
+        --race or --max-buckets run can't erase the entries of bucket
+        images it didn't process. A corrupt file raises on purpose:
+        better to stop than to silently overwrite it.
+        """
+        manifest_path = ANIMATED_ROOT / "combine_manifest.json"
+        if manifest_path.exists():
+            self.manifest = json.loads(manifest_path.read_text())
+        failures_path = ANIMATED_ROOT / "combine_failures.json"
+        if failures_path.exists():
+            self.failures = json.loads(failures_path.read_text())
+
+    #------------------------------------
     # _write_manifest
     #-------------------
 
@@ -400,17 +428,31 @@ class PostureExpressionCombiner:
     # combine_all
     #-------------------
 
-    def combine_all(self, max_buckets: int = None) -> None:
+    def combine_all(self, max_buckets: int = None, races: list = None) -> None:
         """Runs combine_bucket_image() over every base photo in the library.
+
+        Merges into the existing combine_manifest.json /
+        combine_failures.json (see _load_existing_state()).
 
         :param max_buckets: If set, only process the first N distinct
             bucket subdirectories (a cheap smoke test), not N images.
+            Applied after the races filter.
+        :param races: If set, only process bucket images whose bucket
+            directory belongs to one of these Race members.
         """
+        self._load_existing_state()
         base_images = sorted(p for p in LIBRARY_ROOT.glob("*/*.png") if self.is_base_image(p))
+        if races:
+            # Bucket keys are '<race>_<sex>_<age>' and race values can
+            # themselves contain underscores, so match on the prefix.
+            prefixes = tuple(f"{r.value}_" for r in races)
+            base_images = [p for p in base_images if p.parent.name.startswith(prefixes)]
+            log.info("Restricting run to race(s): %s", ", ".join(r.value for r in races))
         if not base_images:
             raise FileNotFoundError(
-                f"No base images found under {LIBRARY_ROOT} -- run "
-                f"client_library_generator.py first.")
+                f"No base images found under {LIBRARY_ROOT}"
+                f"{' for races ' + ', '.join(r.value for r in races) if races else ''}"
+                f" -- run client_library_generator.py first.")
 
         if max_buckets is not None:
             bucket_keys_seen = []
@@ -427,6 +469,9 @@ class PostureExpressionCombiner:
 
         for base_image_path in base_images:
             key = f"{base_image_path.parent.name}/{base_image_path.stem}"
+            # Forget failures recorded for this image by an earlier run:
+            # it's being redone now, and new failures are re-recorded.
+            self.failures.pop(key, None)
             try:
                 self.manifest[key] = self.combine_bucket_image(base_image_path)
             except Exception as exc:
@@ -464,6 +509,10 @@ class PostureExpressionCombinerCLI:
         parser.add_argument("--max-buckets", type=int, default=None,
                              help="Limit to the first N bucket subdirectories, "
                                   "for a cheap smoke test before the full run.")
+        parser.add_argument("--race", action="append", dest="races",
+                             choices=[r.value for r in Race], default=None,
+                             help="Only process this race (repeatable). "
+                                  "Default: all races.")
         parser.add_argument("--skip-posture", action="store_true",
                              help="Never call the OpenAI API; require posture "
                                   "variant files to already exist next to each "
@@ -482,7 +531,11 @@ class PostureExpressionCombinerCLI:
             gpu_index=self.args.gpu, quality=self.args.quality,
             skip_posture=self.args.skip_posture, force_posture=self.args.force_posture,
         )
-        combiner.combine_all(max_buckets=self.args.max_buckets)
+        combiner.combine_all(
+            max_buckets=self.args.max_buckets,
+            races=[Race.from_value(v) for v in self.args.races]
+                   if self.args.races else None,
+        )
 
 
 if __name__ == "__main__":

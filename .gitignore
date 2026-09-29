@@ -222,3 +222,5 @@ animations_bench/
 AutoGenResults
 */.DS_Store
 *.pkl
+assets/client_library/
+assetsSaved/

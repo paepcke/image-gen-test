@@ -3,7 +3,7 @@
  # @Date:   2026-09-08 19:13:19
  # @File:   /Users/paepcke/VSCodeWorkspaces/therapist-img-gen/src/cloud_img_procurement/client_bucket.py
  # @Last Modified by:   Andreas Paepcke
- # @Last Modified time: 2026-09-27 13:36:57
+ # @Last Modified time: 2026-09-28 17:51:56
  # **********************************************************
 """
 ClientBucket: one race x sex x age_range combination, plus the prompt
@@ -45,7 +45,7 @@ class OfficePromptTemplate:
         """
         return (
             f"Create a photorealistic image of a {bucket.age_range.value}"
-            f"-year-old {bucket.sex.value} client of {bucket.race.value} "
+            f"-year-old {bucket.sex.value} client of {bucket.race.prompt_label} "
             f"race/ethnicity, sitting in {self.OFFICE_DESCRIPTION}. "
             f"{self.FRAMING_INSTRUCTION}"
         )

@@ -118,7 +118,7 @@ conda run -n therapist-img-gen python src/cloud_img_procurement/client_library_g
 ```
 
 Check the 2 resulting images (under `assets/client_library/`) look
-right, then run the full 30-bucket library ~(17 minutes):
+right, then run the full 36-bucket library (6 races x 2 sexes x 3 age ranges; ~20 minutes):
 
 ```bash
 time conda run -n therapist-img-gen python src/cloud_img_procurement/client_library_generator.py \
@@ -127,6 +127,26 @@ time conda run -n therapist-img-gen python src/cloud_img_procurement/client_libr
 
 Resumable: re-running with the same arguments skips any image file
 that already exists, unless you pass `--force`.
+
+### Adding or filling in just one race
+
+After adding a member to `Race` in `bucket_enums.py`, restrict both
+stages to it with `--race` (repeatable). Existing files are reused, and
+`manifest.json`, `combine_manifest.json` and `combine_failures.json`
+are *merged* into rather than replaced, so other races' entries survive:
+
+```bash
+conda run -n therapist-img-gen python src/cloud_img_procurement/client_library_generator.py \
+    --images-per-bucket 4 --race middle_eastern
+conda run -n therapist-img-gen python src/cloud_img_procurement/posture_expression_combiner.py \
+    --gpu 0 --race middle_eastern
+```
+
+Bucket names are `<race>_<sex>_<age>` and double as directory and file
+prefixes, so renaming a race after generation means renaming files and
+manifest entries too (the generators skip by file name and would
+otherwise regenerate). The mexican -> hispanic rename was done that way
+with a one-time script, after the middle_eastern run.
 
 ## 5. Validate the library
 
@@ -165,7 +185,7 @@ fixed; pull latest). Then run the full library (31 minutes):
 time conda run -n therapist-img-gen python src/cloud_img_procurement/posture_expression_combiner.py --gpu 0
 ```
 
-This is the slow, expensive step (30 buckets x 4 images x 3 postures
+This is the slow, expensive step (36 buckets x 4 images x 3 postures
 x 8 emotions), so let it run unattended once the smoke test looks
 right. It's resumable for posture variants (skips existing files
 unless `--force-posture`), but re-runs every LivePortrait animation
