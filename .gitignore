@@ -228,3 +228,4 @@ assetsSaved/
 *.py[cod]
 *.class
 __pycache__/
+assets/client_library_animated/
