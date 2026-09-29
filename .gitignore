@@ -224,3 +224,7 @@ AutoGenResults
 *.pkl
 assets/client_library/
 assetsSaved/
+*.pyc
+*.py[cod]
+*.class
+__pycache__/
